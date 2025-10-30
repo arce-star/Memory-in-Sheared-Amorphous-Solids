@@ -1,0 +1,142 @@
+# 剪切振荡模拟 - 20次剪切振荡训练（每轮保存位形）
+# 周期性剪切训练玻璃体系
+
+# ==================== 模拟基本设置 ====================
+# 单位系统：LJ单位
+units lj
+# 原子样式：基本原子类型
+atom_style atomic
+# 模拟维度：3维空间
+dimension 3
+# 边界条件：周期性边界，所有方向都是周期性
+boundary p p p
+
+# ==================== 势函数设置 ====================
+# 使用Lennard-Jones势函数，截断半径2.5
+pair_style lj/cut 2.5
+
+# 输入初始位形文件
+read_data BMLJ_1.data
+
+# 将盒子转换为斜方晶系，允许剪切变形
+change_box all triclinic
+
+# 设置不同原子类型间的LJ势参数
+# 类型1-1相互作用：强度1.0，直径1.0
+pair_coeff 1 1 1.0 1.0 2.5
+# 类型2-2相互作用：强度0.5，直径0.88  
+pair_coeff 2 2 0.5 0.88 2.5
+# 类型1-2混合相互作用：强度1.5，直径0.8
+pair_coeff 1 2 1.5 0.8 2.5
+
+# 设置原子质量
+mass 1 1.0
+mass 2 1.0
+
+# ==================== 输出控制 ====================
+# 关闭热力学输出以减少命令行输出
+thermo 0
+
+# ==================== 振荡参数设置 ====================
+# 应变增量：每次剪切变形的应变步长
+variable dGamma equal 0.0002
+# 最大剪切幅度：振荡的最大应变值
+variable gamma_0 equal 0.06
+# 振荡次数：总共要进行的完整振荡周期数 - 这里设置为 20 轮次
+variable Noscillations equal 20
+# 每个方向的步数：从0到最大振幅需要的步数
+variable steps_per_direction equal v_gamma_0/v_dGamma
+
+# 计算总步数：4个阶段 × 每个方向步数 × 振荡次数
+variable total_steps equal 4*v_steps_per_direction*v_Noscillations
+
+# ==================== 应力计算设置 ====================
+# 计算每个原子的应力张量
+compute peratom all stress/atom NULL
+# 对所有原子的xy应力分量求和，得到体系总剪切应力
+compute pxy all reduce sum c_peratom[4]
+
+# ==================== 轨迹输出设置 ====================
+# 注释掉的轨迹输出，因为.xyz文件体积过大
+# dump sheardump all custom 10 shear_oscillation.xyz id type x y z
+# dump_modify sheardump sort id
+
+# ==================== 初始化时间步 ====================
+# 重置时间步计数器，确保从0开始计数
+reset_timestep 0
+
+# ==================== 主振荡循环开始 ====================
+# 创建循环变量：osc从1循环到Noscillations
+variable osc loop ${Noscillations}
+
+# 定义循环开始位置标签
+label oscillation_loop
+
+# ==================== 阶段1：正向剪切 (0 → +gamma_0) ====================
+# 目的：从零应变正向剪切到最大正应变
+variable dir1 loop ${steps_per_direction}
+label direction1_loop
+# 计算当前应变值：从0线性增加到gamma_0
+variable current_strain equal ${dGamma}*${dir1}
+# 计算目标xy倾斜：应变 × y方向长度
+variable target_xy equal ${current_strain}*ly
+# 改变盒子形状，应用剪切变形
+change_box all xy final ${target_xy} remap units box
+# 使用共轭梯度法进行能量最小化，松弛原子位置
+min_style cg
+minimize 1.0e-6 1.0e-8 500 5000
+# 循环控制：进入下一个应变步
+next dir1
+jump in.shear direction1_loop
+
+# ==================== 阶段2：反向剪切第一部分 (+gamma_0 → 0) ====================
+# 目的：从最大正应变返回到零应变
+variable dir2_1 loop ${steps_per_direction}
+label direction2_1_loop
+# 计算当前应变值：从gamma_0线性减小到0
+variable current_strain equal ${gamma_0} - ${dGamma}*${dir2_1}
+variable target_xy equal ${current_strain}*ly
+change_box all xy final ${target_xy} remap units box
+min_style cg
+minimize 1.0e-6 1.0e-8 500 5000
+next dir2_1
+jump in.shear direction2_1_loop
+
+# ==================== 阶段2：反向剪切第二部分 (0 → -gamma_0) ====================
+# 目的：从零应变继续反向剪切到最大负应变
+variable dir2_2 loop ${steps_per_direction}
+label direction2_2_loop
+# 计算当前应变值：从0线性减小到-gamma_0
+variable current_strain equal 0 - ${dGamma}*${dir2_2}
+variable target_xy equal ${current_strain}*ly
+change_box all xy final ${target_xy} remap units box
+min_style cg
+minimize 1.0e-6 1.0e-8 500 5000
+next dir2_2
+jump in.shear direction2_2_loop
+
+# ==================== 阶段3：返回剪切 (-gamma_0 → 0) ====================
+# 目的：从最大负应变返回到零应变，完成一个完整周期
+variable dir3 loop ${steps_per_direction}
+label direction3_loop
+# 计算当前应变值：从-gamma_0线性增加到0
+variable current_strain equal -${gamma_0} + ${dGamma}*${dir3}
+variable target_xy equal ${current_strain}*ly
+change_box all xy final ${target_xy} remap units box
+min_style cg
+minimize 1.0e-6 1.0e-8 500 5000
+next dir3
+jump in.shear direction3_loop
+
+# ==================== 数据保存 ====================
+# 每轮振荡结束后保存当前位形数据
+# 文件命名：sheared_oscillation_1.data, sheared_oscillation_2.data, ...
+write_data sheared_oscillation_${osc}.data
+
+# ==================== 循环控制 ====================
+# 振荡计数器加1，如果未达到总次数则继续循环
+next osc
+# 跳回循环开始位置，进行下一轮振荡
+jump in.shear oscillation_loop
+
+# ==================== 模拟结束 ====================
