@@ -1,0 +1,171 @@
+# 振幅扫描剪切实验
+# 测试玻璃体系在不同剪切振幅下的响应并测量个振幅读取后 0 应变处的 MSD 数值
+
+# ==================== 基本模拟设置 ====================
+# 使用LJ单位系统简化计算
+units lj
+# 原子样式：基本原子类型
+atom_style atomic
+# 模拟维度：3维空间
+dimension 3
+# 边界条件：所有方向周期性边界
+boundary p p p
+
+# ==================== 振幅扫描参数设置 ====================
+# 应变增量：每个剪切步的应变变化量
+variable dGamma equal 1.0e-4
+# 参考振幅：用于归一化的基准振幅值
+variable gamma_0 equal 0.05
+# 扫描振幅数量：从0.1*gamma_0到2.0*gamma_0，共20个点
+variable Namplitudes equal 20
+
+# ==================== 数据文件初始化 ====================
+# 初始化MSD数据文件
+print "Amplitude MSD" file Amplitude_MSD_data.txt
+
+# ==================== 主循环：振幅扫描 ====================
+# 创建循环变量：amp从1循环到Namplitudes
+variable amp loop ${Namplitudes}
+# 定义循环开始位置标签
+label amplitude_loop
+
+# 完全重新开始每个振幅的模拟（确保独立性）
+clear
+units lj
+atom_style atomic
+dimension 3
+boundary p p p
+
+# ==================== 势函数设置 ====================
+# 使用Lennard-Jones势函数，截断半径2.5
+pair_style lj/cut 2.5
+# 读取训练后的玻璃体系位形文件
+read_data sheared_oscillation_20.data
+# 转换为斜方晶系以支持剪切变形
+change_box all triclinic
+
+# 设置不同原子类型间的LJ势参数
+# 类型1-1相互作用：强度1.0，直径1.0
+pair_coeff 1 1 1.0 1.0 2.5
+# 类型2-2相互作用：强度0.5，直径0.88
+pair_coeff 2 2 0.5 0.88 2.5
+# 类型1-2混合相互作用：强度1.5，直径0.8
+pair_coeff 1 2 1.5 0.8 2.5
+
+# 设置原子质量
+mass 1 1.0
+mass 2 1.0
+
+# ==================== 邻居列表设置 ====================
+# 邻居列表截断半径：0.3
+neighbor 0.3 bin
+# 邻居列表更新频率：每5步更新一次
+neigh_modify every 5 delay 0 check yes
+
+# ==================== 计算设置 ====================
+# 计算每个原子的应力张量
+compute peratom all stress/atom NULL
+# 对所有原子的xy应力分量求和，得到体系总剪切应力
+compute pxy all reduce sum c_peratom[4]
+# 计算均方位移（MSD），用于表征原子位置变化
+compute msd all msd com yes
+
+# ==================== 输出控制 ====================
+# 关闭热力学输出以减少命令行输出
+thermo 0
+
+# ==================== 时间步初始化 ====================
+# 重置时间步计数器，确保从0开始计数
+reset_timestep 0
+
+# ==================== 振幅参数计算 ====================
+# 计算当前振幅：相对振幅 × 参考振幅
+variable current_amplitude equal ${amp}*0.1*${gamma_0}
+# 计算每个方向需要的步数：振幅 / 应变增量
+variable steps_per_direction equal v_current_amplitude/${dGamma}
+
+# ==================== MSD参考位置初始化 ====================
+# 运行0步以初始化MSD计算的参考位置
+run 0
+
+# ==================== 最小化参数设置 ====================
+# 使用共轭梯度法进行能量最小化
+min_style cg
+
+# ==================== 阶段1：正向剪切 (0 → +当前振幅) ====================
+# 目的：从零应变正向剪切到当前测试的最大正应变
+variable dir1 loop ${steps_per_direction}
+label direction1_loop
+# 计算当前应变值：从0线性增加到当前振幅
+variable current_strain equal ${dGamma}*${dir1}
+# 计算目标xy倾斜：应变 × y方向长度
+variable target_xy equal ${current_strain}*ly
+# 改变盒子形状，应用剪切变形
+change_box all xy final ${target_xy} remap units box
+# 能量最小化松弛原子位置
+minimize 1.0e-5 1.0e-6 200 2000
+# 循环控制：进入下一个应变步
+next dir1
+jump SELF direction1_loop
+
+# ==================== 阶段2.1：反向剪切第一部分 (+当前振幅 → 0) ====================
+# 目的：从最大正应变返回到零应变
+variable dir2_1 loop ${steps_per_direction}
+label direction2_1_loop
+# 计算当前应变值：从当前振幅线性减小到0
+variable current_strain equal ${current_amplitude} - ${dGamma}*${dir2_1}
+variable target_xy equal ${current_strain}*ly
+change_box all xy final ${target_xy} remap units box
+minimize 1.0e-5 1.0e-6 200 2000
+next dir2_1
+jump SELF direction2_1_loop
+
+# ==================== 阶段2.2：反向剪切第二部分 (0 → -当前振幅) ====================
+# 目的：从零应变继续反向剪切到最大负应变
+variable dir2_2 loop ${steps_per_direction}
+label direction2_2_loop
+# 计算当前应变值：从0线性减小到-当前振幅
+variable current_strain equal 0 - ${dGamma}*${dir2_2}
+variable target_xy equal ${current_strain}*ly
+change_box all xy final ${target_xy} remap units box
+minimize 1.0e-5 1.0e-6 200 2000
+next dir2_2
+jump SELF direction2_2_loop
+
+# ==================== 阶段3：返回剪切 (-当前振幅 → 0) ====================
+# 目的：从最大负应变返回到零应变，完成一个完整测试周期
+variable dir3 loop ${steps_per_direction}
+label direction3_loop
+# 计算当前应变值：从-当前振幅线性增加到0
+variable current_strain equal -${current_amplitude} + ${dGamma}*${dir3}
+variable target_xy equal ${current_strain}*ly
+change_box all xy final ${target_xy} remap units box
+minimize 1.0e-5 1.0e-6 200 2000
+next dir3
+jump SELF direction3_loop
+
+# ==================== MSD计算和记录 ====================
+# 计算MSD（与循环开始时的初始位形比较）
+run 0
+# 获取MSD值（c_msd[4]表示总MSD）
+variable msd_val equal c_msd[4]
+# 计算归一化振幅（相对于参考振幅gamma_0）
+variable relative_amplitude equal ${current_amplitude}/${gamma_0}
+
+# 添加MSD数据到文件
+print "Amplitude_MSD: ${relative_amplitude} ${msd_val}" append Amplitude_MSD_data.txt
+
+# ==================== 清理计算 ====================
+# 移除应力计算
+uncompute peratom
+uncompute pxy
+# 移除MSD计算
+uncompute msd
+
+# ==================== 循环控制 ====================
+# 振幅计数器加1，如果未达到总数量则继续循环
+next amp
+# 跳回循环开始位置，进行下一个振幅测试
+jump SELF amplitude_loop
+
+# ==================== 模拟结束 ====================
