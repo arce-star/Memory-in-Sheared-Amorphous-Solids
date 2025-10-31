@@ -10,6 +10,8 @@
   输入 BMLJ_1.data 位形文件，输出每轮次训练后的位形文件 sheared_oscillation_1.data...sheared_oscillation_20.data
 - `in.read` 对训练某轮次后的体系进行独立的不同振幅读取  
   输入训练某轮次后的体系位形文件 sheared_oscillation_1.data ，输出这个位形在不同振幅下读取的 MSD 文件 Amplitude_MSD_data.txt
+- `in.read_one` 对训练某轮次后的体系进行独立的单振幅读取
+  输入训练某轮次后的体系位形文件 sheared_oscillation_5.data ，输出这个位形在0.06振幅下读取的 MSD 文件 Amplitude_MSD_data.txt
 
 ## 命令行命令
 
