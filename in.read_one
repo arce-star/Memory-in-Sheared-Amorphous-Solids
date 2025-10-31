@@ -100,7 +100,7 @@ change_box all xy final ${target_xy} remap units box
 minimize 1.0e-5 1.0e-6 200 2000
 # 循环控制：进入下一个应变步
 next dir1
-jump in.shear_one direction1_loop
+jump in.read_one direction1_loop
 
 # ==================== 阶段2.1：反向剪切第一部分 (+当前振幅 → 0) ====================
 # 目的：从最大正应变返回到零应变
@@ -112,7 +112,7 @@ variable target_xy equal ${current_strain}*ly
 change_box all xy final ${target_xy} remap units box
 minimize 1.0e-5 1.0e-6 200 2000
 next dir2_1
-jump in.shear_one direction2_1_loop
+jump in.read_one direction2_1_loop
 
 # ==================== 阶段2.2：反向剪切第二部分 (0 → -当前振幅) ====================
 # 目的：从零应变继续反向剪切到最大负应变
@@ -124,7 +124,7 @@ variable target_xy equal ${current_strain}*ly
 change_box all xy final ${target_xy} remap units box
 minimize 1.0e-5 1.0e-6 200 2000
 next dir2_2
-jump in.shear_one direction2_2_loop
+jump in.read_one direction2_2_loop
 
 # ==================== 阶段3：返回剪切 (-当前振幅 → 0) ====================
 # 目的：从最大负应变返回到零应变，完成一个完整测试周期
@@ -136,7 +136,7 @@ variable target_xy equal ${current_strain}*ly
 change_box all xy final ${target_xy} remap units box
 minimize 1.0e-5 1.0e-6 200 2000
 next dir3
-jump in.shear_one direction3_loop
+jump in.read_one direction3_loop
 
 # ==================== MSD计算和记录 ====================
 # 计算MSD（与循环开始时的初始位形比较）
