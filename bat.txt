@@ -77,3 +77,25 @@ while ($true) {
 
 Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name, CPU, WorkingSet, Id
 
+############################################
+            提取5轮次MSD读取
+############################################
+
+$folders = @('0.1', '0.2', '0.5', '0.12', '0.15', '0.062', '0.075', '0.085', '5.0')
+$outputFile = "Combined_Amplitude_MSD_Data.txt"
+
+"" | Out-File $outputFile
+
+foreach ($folder in $folders) {
+    $filePath = "$folder\Amplitude_MSD_data.txt"
+    if (Test-Path $filePath) {
+        $line = Get-Content $filePath | Select-String "Amplitude_MSD:"
+        if ($line) {
+            $data = $line -replace "Amplitude_MSD:\s*", ""
+            "$folder`t$data" | Out-File $outputFile -Append
+        }
+    }
+}
+
+Write-Host "处理完成！输出文件: $outputFile"
+
