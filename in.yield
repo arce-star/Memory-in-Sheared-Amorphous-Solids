@@ -1,0 +1,93 @@
+# 准静态剪切 - BMLJ体系应力应变曲线
+# 用于测量BMLJ的应力-应变曲线
+
+units lj
+atom_style atomic
+dimension 3
+boundary p p p
+
+# ==================== BMLJ势函数参数 ====================
+# Kob-Andersen 80:20 二元LJ混合物标准参数
+pair_style lj/cut 2.5
+
+# ==================== 读取初始构型 ====================
+# 读取要测量的BMLJ系统构型
+read_data BMLJ_03.data
+
+# 设置原子质量
+mass 1 1.0  # 类型A原子质量
+mass 2 1.0  # 类型B原子质量
+
+# 设置LJ势函数系数
+pair_coeff 1 1 1.0 1.0 2.5      # A-A相互作用: ε=1.0, σ=1.0, 截断半径=2.5
+pair_coeff 2 2 0.5 0.88 2.5     # B-B相互作用: ε=0.5, σ=0.88, 截断半径=2.5
+pair_coeff 1 2 1.5 0.8 2.5      # A-B相互作用: ε=1.5, σ=0.8, 截断半径=2.5
+
+# 将盒子转换为斜形盒子以支持剪切变形
+change_box all triclinic
+
+# ==================== 计算设置 ====================
+# 邻居列表设置
+neighbor 0.3 bin
+neigh_modify every 1 delay 0 check yes
+
+# 应力计算设置
+compute peratom all stress/atom NULL          # 每个原子的应力
+compute pxy all reduce sum c_peratom[4]       # 剪切应力σ_xy (索引4对应xy分量)
+
+# ==================== 输出设置 ====================
+thermo 50  # 开启热力学输出用于监控进度
+thermo_style custom step xy c_pxy pe
+
+# 初始化数据文件 - 先清空文件并写入标题
+print "strain(xy) stress(pxy) potential(pe) step" file stress_strain_bmlj.txt
+
+# ==================== 准静态剪切参数 ====================
+variable dGamma equal 0.005       # 应变增量 - 控制变形精度
+variable total_strain equal 0.3   # 总剪切应变目标值
+variable nsteps equal v_total_strain/v_dGamma  # 计算总步数 = 0.3/0.005 = 60步
+
+reset_timestep 0  # 重置时间步计数器
+
+# ==================== 初始能量最小化 ====================
+# 在开始剪切前使系统达到能量最小状态
+min_style cg  # 使用共轭梯度最小化算法
+minimize 1.0e-6 1.0e-8 1000 10000  # 能量容差, 力容差, 最大迭代, 最大求值次数
+
+# ==================== 初始化变量和输出 ====================
+# 运行0步以初始化计算和变量
+run 0
+
+# 输出初始状态 (应变为0)
+print "0 $(c_pxy) $(pe) 0" append stress_strain_bmlj.txt
+
+# ==================== 准静态剪切循环 ====================
+# 使用不同的变量名避免与thermo关键字冲突
+variable iter loop ${nsteps}
+label shear_loop
+
+# 计算当前应变和目标盒子形状
+variable current_strain equal ${dGamma}*${iter}        # 当前累积应变 = 步长 × 步数
+variable target_xy equal ${current_strain}*ly          # 目标xy倾斜因子 = 应变 × y方向长度
+
+# 应用剪切变形到模拟盒子
+change_box all xy final ${target_xy} remap units box
+
+# 能量最小化松弛原子位置以适应新的应变状态
+min_style cg
+minimize 1.0e-6 1.0e-8 500 5000  # 较宽松的最小化标准以提高计算效率
+
+# 使用print append输出当前数据 - 使用step而不是iter
+print "$(xy) $(c_pxy) $(pe) $(step)" append stress_strain_bmlj.txt
+
+next iter  # 循环计数器增加
+jump SELF shear_loop  # 跳回循环开始
+
+# ==================== 后处理和数据保存 ====================
+# 保存变形后的最终构型，用于后续分析或继续模拟
+# write_data bmlj_sheared_final.data
+
+# ==================== 清理计算 ====================
+# 释放计算资源
+uncompute peratom
+uncompute pxy
