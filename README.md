@@ -12,6 +12,8 @@
   输入训练某轮次后的体系位形文件 sheared_oscillation_1.data ，输出这个位形在不同振幅下读取的 MSD 文件 Amplitude_MSD_data.txt
 - `in.read_one` 对训练某轮次后的体系进行独立的单振幅读取
   输入训练某轮次后的体系位形文件 sheared_oscillation_5.data ，输出这个位形在0.06振幅下读取的 MSD 文件 Amplitude_MSD_data.txt
+- `in.yield` 对一个位形进行单向剪切并测量应力应变曲线
+  输入体系位形文件 BMLJ_03.data ，输出这个位形在从0应变到0.3应变过程中的 strain-stress 数据文件 stress_strain_bmlj.txt
 
 ## 命令行命令
 
